@@ -72,6 +72,7 @@ HybridAStarFlow::HybridAStarFlow(ros::NodeHandle &nh) {
 }
 
 void HybridAStarFlow::Run() {
+    //从消息队列中读地图、起始位姿、终止位姿
     ReadData();
 
     if (!has_map_) {

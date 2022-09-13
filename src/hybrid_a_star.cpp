@@ -63,6 +63,7 @@ HybridAStar::~HybridAStar() {
     ReleaseMemory();
 }
 
+//主要初始化map_data_和state_node_map_
 void HybridAStar::Init(double x_lower, double x_upper, double y_lower, double y_upper,
                        double state_grid_resolution, double map_grid_resolution) {
     SetVehicleShape(4.7, 2.0, 1.3);
@@ -112,6 +113,12 @@ void HybridAStar::Init(double x_lower, double x_upper, double y_lower, double y_
 
         delete[] state_node_map_;
         state_node_map_ = nullptr;
+    }
+
+    int array[][];
+    for(int i=0;i<n;i++){
+        for(int j=0;j<m;j++)
+        delete [] array[i][j];
     }
 
     state_node_map_ = new StateNode::Ptr **[STATE_GRID_SIZE_X_];
@@ -440,12 +447,15 @@ bool HybridAStar::BeyondBoundary(const Vec2d &pt) const {
 double HybridAStar::ComputeH(const StateNode::Ptr &current_node_ptr,
                              const StateNode::Ptr &terminal_node_ptr) {
     double h;
+    //欧式距离启发函数 l2范数
     // L2
 //    h = (current_node_ptr->state_.head(2) - terminal_node_ptr->state_.head(2)).norm();
 
+    //曼哈顿距离启发函数 L1范数
     // L1
     h = (current_node_ptr->state_.head(2) - terminal_node_ptr->state_.head(2)).lpNorm<1>();
 
+    //启发函数值小于3倍shot_distance 使用rs曲线启发函数
     if (h < 3.0 * shot_distance_) {
         h = rs_path_ptr_->Distance(current_node_ptr->state_.x(), current_node_ptr->state_.y(),
                                    current_node_ptr->state_.z(),
@@ -455,7 +465,9 @@ double HybridAStar::ComputeH(const StateNode::Ptr &current_node_ptr,
 
     return h;
 }
-
+/*前向：基本成本是走过的弧长，如果是转向会乘一个转向惩罚（鼓励走直线），如果转向方向变了会再乘一个方向改变惩罚系数。
+后向：相比前向会多乘一个向后行驶的惩罚系数
+*/
 double HybridAStar::ComputeG(const StateNode::Ptr &current_node_ptr,
                              const StateNode::Ptr &neighbor_node_ptr) const {
     double g;
@@ -530,8 +542,10 @@ bool HybridAStar::Search(const Vec3d &start_state, const Vec3d &goal_state) {
         current_node_ptr->node_status_ = StateNode::IN_CLOSESET;
         openset_.erase(openset_.begin());
 
+        //shot_distance为5米，和目标点相距5米时使用RS曲线
         if ((current_node_ptr->state_.head(2) - goal_node_ptr->state_.head(2)).norm() <= shot_distance_) {
             double rs_length = 0.0;
+            //生成到终点的RS曲线，并检查是否碰撞或者曲线超出地图范围
             if (AnalyticExpansions(current_node_ptr, goal_node_ptr, rs_length)) {
                 terminal_node_ptr_ = goal_node_ptr;
 
@@ -557,6 +571,7 @@ bool HybridAStar::Search(const Vec3d &start_state, const Vec3d &goal_state) {
             }
         }
 
+        //生成当前节点的孩子节点，根据阿克曼转向模型，求指定步长后的状态（向前有三个状态，向后有三个状态）
         Timer timer_get_neighbor;
         GetNeighborNodes(current_node_ptr, neighbor_nodes_ptr);
         neighbor_time = neighbor_time + timer_get_neighbor.End();
