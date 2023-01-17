@@ -445,12 +445,15 @@ bool HybridAStar::BeyondBoundary(const Vec2d &pt) const {
 
 double HybridAStar::ComputeH(const StateNode::Ptr &current_node_ptr, const StateNode::Ptr &terminal_node_ptr) {
       double h;
-      // L2
+      // 欧式距离启发函数 l2范数
+      //  L2
       //    h = (current_node_ptr->state_.head(2) - terminal_node_ptr->state_.head(2)).norm();
 
-      // L1
+      // 曼哈顿距离启发函数 L1范数
+      //  L1
       h = (current_node_ptr->state_.head(2) - terminal_node_ptr->state_.head(2)).lpNorm<1>();
 
+      // 启发函数值小于3倍shot_distance 使用rs曲线启发函数
       if (h < 3.0 * shot_distance_) {
             h = rs_path_ptr_->Distance(current_node_ptr->state_.x(), current_node_ptr->state_.y(),
                                        current_node_ptr->state_.z(), terminal_node_ptr->state_.x(),
@@ -459,7 +462,9 @@ double HybridAStar::ComputeH(const StateNode::Ptr &current_node_ptr, const State
 
       return h;
 }
-
+/*前向：基本成本是走过的弧长，如果是转向会乘一个转向惩罚（鼓励走直线），如果转向方向变了会再乘一个方向改变惩罚系数。
+后向：相比前向会多乘一个向后行驶的惩罚系数
+*/
 double HybridAStar::ComputeG(const StateNode::Ptr &current_node_ptr, const StateNode::Ptr &neighbor_node_ptr) const {
       double g;
       if (neighbor_node_ptr->direction_ == StateNode::FORWARD) {
@@ -467,32 +472,30 @@ double HybridAStar::ComputeG(const StateNode::Ptr &current_node_ptr, const State
                   if (neighbor_node_ptr->steering_grade_ == 0) {
                         g = segment_length_ * steering_change_penalty_;
                   } else {
-                        g = segment_length_ * steering_change_penalty_ * steering_penalty_;
+                        if (neighbor_node_ptr->steering_grade_ == 0) {
+                              g = segment_length_;
+                        } else {
+                              g = segment_length_ * steering_penalty_;
+                        }
                   }
             } else {
-                  if (neighbor_node_ptr->steering_grade_ == 0) {
-                        g = segment_length_;
+                  if (neighbor_node_ptr->steering_grade_ != current_node_ptr->steering_grade_) {
+                        if (neighbor_node_ptr->steering_grade_ == 0) {
+                              g = segment_length_ * steering_change_penalty_ * reversing_penalty_;
+                        } else {
+                              g = segment_length_ * steering_change_penalty_ * steering_penalty_ * reversing_penalty_;
+                        }
                   } else {
-                        g = segment_length_ * steering_penalty_;
+                        if (neighbor_node_ptr->steering_grade_ == 0) {
+                              g = segment_length_ * reversing_penalty_;
+                        } else {
+                              g = segment_length_ * steering_penalty_ * reversing_penalty_;
+                        }
                   }
             }
-      } else {
-            if (neighbor_node_ptr->steering_grade_ != current_node_ptr->steering_grade_) {
-                  if (neighbor_node_ptr->steering_grade_ == 0) {
-                        g = segment_length_ * steering_change_penalty_ * reversing_penalty_;
-                  } else {
-                        g = segment_length_ * steering_change_penalty_ * steering_penalty_ * reversing_penalty_;
-                  }
-            } else {
-                  if (neighbor_node_ptr->steering_grade_ == 0) {
-                        g = segment_length_ * reversing_penalty_;
-                  } else {
-                        g = segment_length_ * steering_penalty_ * reversing_penalty_;
-                  }
-            }
-      }
 
-      return g;
+            return g;
+      }
 }
 
 bool HybridAStar::Search(const Vec3d &start_state, const Vec3d &goal_state) {
@@ -592,7 +595,8 @@ bool HybridAStar::Search(const Vec3d &start_state, const Vec3d &goal_state) {
                         LOG(INFO) << (neighbor_nodes_ptr[i]->direction_ == StateNode::FORWARD ? "FORWARD:"
                                                                                               : "BACKWORD:")
                                   << "successor" << neighbor_nodes_ptr[i]->steering_grade_ << " index{"
-                                  << neighbor_nodes_ptr[i]->grid_index_.x() << "," << neighbor_nodes_ptr[i]->grid_index_.y() << ","
+                                  << neighbor_nodes_ptr[i]->grid_index_.x() << ","
+                                  << neighbor_nodes_ptr[i]->grid_index_.y() << ","
                                   << neighbor_nodes_ptr[i]->grid_index_.z() << "} "
                                   << " into openset, the state grid havn't node before";
                         continue;
@@ -610,7 +614,8 @@ bool HybridAStar::Search(const Vec3d &start_state, const Vec3d &goal_state) {
                               LOG(INFO) << (neighbor_nodes_ptr[i]->direction_ == StateNode::FORWARD ? "FORWARD:"
                                                                                                     : "BACKWORD:")
                                         << "successor" << neighbor_nodes_ptr[i]->steering_grade_ << " index{"
-                                        << neighbor_nodes_ptr[i]->grid_index_.x() << "," << neighbor_nodes_ptr[i]->grid_index_.y() << ","
+                                        << neighbor_nodes_ptr[i]->grid_index_.x() << ","
+                                        << neighbor_nodes_ptr[i]->grid_index_.y() << ","
                                         << neighbor_nodes_ptr[i]->grid_index_.z() << "} "
                                         << " into openset, the successor's total cost less than the origin";
                         } else {
@@ -618,7 +623,8 @@ bool HybridAStar::Search(const Vec3d &start_state, const Vec3d &goal_state) {
                               LOG(INFO) << (neighbor_nodes_ptr[i]->direction_ == StateNode::FORWARD ? "FORWARD:"
                                                                                                     : "BACKWORD:")
                                         << "successor" << neighbor_nodes_ptr[i]->steering_grade_ << " index{"
-                                        << neighbor_nodes_ptr[i]->grid_index_.x() << "," << neighbor_nodes_ptr[i]->grid_index_.y() << ","
+                                        << neighbor_nodes_ptr[i]->grid_index_.x() << ","
+                                        << neighbor_nodes_ptr[i]->grid_index_.y() << ","
                                         << neighbor_nodes_ptr[i]->grid_index_.z() << "} "
                                         << " be deleted, the successor's total cost is greater than the origin";
                         }
@@ -627,7 +633,8 @@ bool HybridAStar::Search(const Vec3d &start_state, const Vec3d &goal_state) {
                         LOG(INFO) << (neighbor_nodes_ptr[i]->direction_ == StateNode::FORWARD ? "FORWARD:"
                                                                                               : "BACKWORD:")
                                   << "successor" << neighbor_nodes_ptr[i]->steering_grade_ << " index{"
-                                  << neighbor_nodes_ptr[i]->grid_index_.x() << "," << neighbor_nodes_ptr[i]->grid_index_.y() << ","
+                                  << neighbor_nodes_ptr[i]->grid_index_.x() << ","
+                                  << neighbor_nodes_ptr[i]->grid_index_.y() << ","
                                   << neighbor_nodes_ptr[i]->grid_index_.z() << "} "
                                   << " deleted, the state grid has in closed set";
                         delete neighbor_node_ptr;
